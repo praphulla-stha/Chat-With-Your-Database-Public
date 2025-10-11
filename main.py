@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 import pandas as pd
 from sqlalchemy import create_engine, text
 import google.generativeai as genai
@@ -19,6 +20,42 @@ def get_schema(engine):
     except Exception as e:
         print(f"An error occurred while getting the schema: {e}")
         return None
+    
+def clean_sql_response(response_text):
+    """
+    Robustly clean and extract SQL query from Gemini response.
+    Handles all edge cases including garbage text before SELECT.
+    """
+    text = response_text.replace("```sql", "").replace("```", "")
+    
+    text = " ".join(text.split())
+    
+    sql_keywords = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'WITH', 'CREATE']
+    
+    sql_query = None
+    text_upper = text.upper()
+    
+    for keyword in sql_keywords:
+        if keyword in text_upper:
+            keyword_pos = text_upper.find(keyword)
+            sql_query = text[keyword_pos:].strip()
+            break
+    
+    if sql_query is None:
+        sql_query = text.strip()
+    
+    if ';' in sql_query:
+        sql_query = sql_query.split(';')[0] + ';'
+    
+    garbage_patterns = [
+        r'^[a-z]{1,3}\s+', 
+        r'^\W+',            
+    ]
+    
+    for pattern in garbage_patterns:
+        sql_query = re.sub(pattern, '', sql_query, flags=re.IGNORECASE)
+    
+    return sql_query.strip()
 
 def generate_sql(schema, question):
     """Generates SQL query from a natural language question using Gemini."""
@@ -76,4 +113,4 @@ if __name__ == "__main__":
             result = execute_query(db_engine, sql_query)
             if result is not None:
                 print("\nHere are your results:")
-                print(result.to_string())
+                print(result.to_string(index=False))
