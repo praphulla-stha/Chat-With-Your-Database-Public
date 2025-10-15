@@ -1,4 +1,4 @@
-# Chat With Your Supermarket Database 🛒
+# Chat With Your Supermarket Database 
 
  An interactive Streamlit web app that allows users to ask questions in natural language to a database of supermarket sales. It uses the Google Gemini API to translate English questions into executable SQL queries and displays the results.
 
