@@ -284,7 +284,7 @@ with tab1:
         
         with chat_container:
             # Display chat history
-            for message in st.session_state.chat_history:
+            for idx,message in enumerate(st.session_state.chat_history):
                 with st.chat_message(message["role"]):
                     st.write(message["content"])
                     
@@ -296,18 +296,21 @@ with tab1:
                         
                         if "data" in message and message["data"] is not None:
                             st.dataframe(message["data"], use_container_width=True)
-                            
+                            # Unique key for download button
+                            unique_key = f"download_{idx}"
                             # Download button for results
                             csv = message["data"].to_csv(index=False)
                             st.download_button(
                                 label="Download Results",
                                 data=csv,
                                 file_name=f"query_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                                mime="text/csv"
+                                mime="text/csv",
+                                key=unique_key
                             )
                         
                         if enable_visualizations and "chart" in message:
-                            st.plotly_chart(message["chart"], use_container_width=True)
+                            chart_key = f"plotly_chart_{idx}"
+                            st.plotly_chart(message["chart"], use_container_width=True,key=chart_key)
         
         # Chat input
         user_query = st.chat_input("Ask a question about your database...", key="chat_input")
