@@ -1,7 +1,7 @@
 import pandas as pd
 from sqlalchemy import create_engine
 
-df = pd.read_csv(r"C:\Users\lenovo\Desktop\projects\Chat-With-Your-Database\src\data\SuperMarket_Analysis.csv")
+df = pd.read_csv(r"C:\Users\lenovo\Desktop\projects\Chat-With-Your-Database\SuperMarket_Analysis.csv")
 
 df.columns = df.columns.str.replace(' ', '_').str.lower()
 
