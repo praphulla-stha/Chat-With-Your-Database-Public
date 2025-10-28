@@ -261,10 +261,10 @@ with tab1:
         col1, col2, col3, col4 = st.columns(4)
         
         example_queries = [
-            "Show total sales for all products",
-            "List top 10 products by sales",
-            "Average sales by branch",
-            "Show sales in January 2019"
+            "List the 20 most recent sales with key details.",
+            "Aggregate the total sales for each product line (a category)",
+            "Calculate the total sales for each day",
+            "Pull 500 individual data points, each with a sales value and a rating and see if there is any correlation between the two."
         ]
         
         for col, query in zip([col1, col2, col3, col4], example_queries):
@@ -284,22 +284,90 @@ with tab1:
         
         with chat_container:
             # Display chat history
-            for idx,message in enumerate(st.session_state.chat_history):
+            for idx, message in enumerate(st.session_state.chat_history):
                 with st.chat_message(message["role"]):
                     st.write(message["content"])
                     
                     # If assistant message, show additional info
-                    if message["role"] == "assistant" and "sql" in message:
-                        if show_sql_query:
+                    if message["role"] == "assistant":
+                        if "sql" in message and show_sql_query:
                             with st.expander("View Generated SQL"):
                                 st.code(message["sql"], language="sql")
                         
+                        # --- NEW DYNAMIC VISUALIZATION LOGIC ---
                         if "data" in message and message["data"] is not None:
-                            st.dataframe(message["data"], use_container_width=True)
-                            # Unique key for download button
+                            df = message["data"]
+                            
+                            # Define chart options
+                            chart_options = ["Data Table"]
+                            if enable_visualizations:
+                                chart_options.extend(["Bar Chart", "Line Chart", "Scatter Plot"])
+                            
+                            # Get default selection
+                            default_selection = message.get("chart_selection", "Bar Chart")
+                            if default_selection not in chart_options:
+                                default_selection = "Data Table"
+                            
+                            default_index = chart_options.index(default_selection)
+
+                            # Create unique key for the selectbox
+                            select_key = f"chart_select_{idx}"
+                            
+                            selected_chart = st.selectbox(
+                                "Select visualization:",
+                                options=chart_options,
+                                index=default_index,
+                                key=select_key
+                            )
+                            
+                            # Store the user's choice back into the message for persistence
+                            message["chart_selection"] = selected_chart
+
+                            # --- Conditionally render based on selection ---
+                            numeric_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns
+                            all_cols = df.columns
+                            
+                            try:
+                                if selected_chart == "Data Table":
+                                    st.dataframe(df, use_container_width=True)
+                                
+                                elif selected_chart == "Bar Chart":
+                                    if len(numeric_cols) > 0 and len(all_cols) > 1:
+                                        x_col = all_cols[0] # Guess X
+                                        y_col = numeric_cols[0] # Guess Y
+                                        chart = px.bar(df.head(20), x=x_col, y=y_col, title=f"{y_col} by {x_col}")
+                                        st.plotly_chart(chart, use_container_width=True)
+                                    else:
+                                        st.info("Bar chart requires at least one categorical and one numeric column. Showing data table.")
+                                        st.dataframe(df, use_container_width=True)
+
+                                elif selected_chart == "Line Chart":
+                                    if len(numeric_cols) > 0 and len(all_cols) > 1:
+                                        x_col = all_cols[0] # Guess X
+                                        y_col = numeric_cols[0] # Guess Y
+                                        chart = px.line(df.head(20), x=x_col, y=y_col, title=f"{y_col} by {x_col}")
+                                        st.plotly_chart(chart, use_container_width=True)
+                                    else:
+                                        st.info("Line chart requires at least one X-axis column and one numeric Y-axis column. Showing data table.")
+                                        st.dataframe(df, use_container_width=True)
+
+                                elif selected_chart == "Scatter Plot":
+                                    if len(numeric_cols) >= 2:
+                                        x_col = numeric_cols[0] # Guess X
+                                        y_col = numeric_cols[1] # Guess Y
+                                        chart = px.scatter(df.head(20), x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
+                                        st.plotly_chart(chart, use_container_width=True)
+                                    else:
+                                        st.info("Scatter plot requires at least two numeric columns. Showing data table.")
+                                        st.dataframe(df, use_container_width=True)
+                            
+                            except Exception as e:
+                                st.error(f"Could not generate chart: {e}")
+                                st.dataframe(df, use_container_width=True) # Fallback to dataframe
+
+                            # Download button (remains the same)
                             unique_key = f"download_{idx}"
-                            # Download button for results
-                            csv = message["data"].to_csv(index=False)
+                            csv = df.to_csv(index=False)
                             st.download_button(
                                 label="Download Results",
                                 data=csv,
@@ -307,10 +375,7 @@ with tab1:
                                 mime="text/csv",
                                 key=unique_key
                             )
-                        
-                        if enable_visualizations and "chart" in message:
-                            chart_key = f"plotly_chart_{idx}"
-                            st.plotly_chart(message["chart"], use_container_width=True,key=chart_key)
+                        # --- END OF NEW VISUALIZATION LOGIC ---
         
         # Chat input
         user_query = st.chat_input("Ask a question about your database...", key="chat_input")
@@ -329,6 +394,7 @@ with tab1:
                     start_time = datetime.now()
                     
                     # Step 1: Generate SQL using Gemini
+                    # (We will modify this in Part 2)
                     sql_query = generate_sql(st.session_state.current_schema, user_query)
                     
                     if sql_query:
@@ -343,20 +409,8 @@ with tab1:
                             else:
                                 result_message = f"Found {len(result_df)} results:"
                             
-                            # Step 3: Create visualization if enabled
-                            chart = None
-                            if enable_visualizations and len(result_df) > 0:
-                                numeric_cols = result_df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns
-                                if len(numeric_cols) > 0 and len(result_df.columns) > 1:
-                                    try:
-                                        chart = px.bar(
-                                            result_df.head(20),  # Limit to 20 rows for visualization
-                                            x=result_df.columns[0],
-                                            y=numeric_cols[0],
-                                            title=f"{numeric_cols[0]} by {result_df.columns[0]}"
-                                        )
-                                    except:
-                                        pass  # Skip visualization if error
+                            # --- MODIFIED ---
+                            # Step 3 is removed. No chart is generated here.
                             
                             # Calculate response time
                             response_time = (datetime.now() - start_time).total_seconds()
@@ -368,11 +422,9 @@ with tab1:
                                 "sql": sql_query,
                                 "data": result_df,
                                 "timestamp": datetime.now(),
-                                "response_time": response_time
+                                "response_time": response_time,
+                                "chart_selection": "Bar Chart" # <-- ADDED: Set default
                             }
-                            
-                            if chart:
-                                assistant_message["chart"] = chart
                             
                             st.session_state.chat_history.append(assistant_message)
                             
