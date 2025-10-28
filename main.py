@@ -250,12 +250,96 @@ st.markdown("Ask questions about your data in natural language - no SQL required
 tab1, tab2, tab3, tab4 = st.tabs(["💭 Chat", "📜 Query History", "📊 Insights", "ℹ️ Help"])
 
 # TAB 1: CHAT INTERFACE
+# TAB 1: CHAT INTERFACE
 with tab1:
     if not st.session_state.api_configured:
         st.warning(" Please configure Google Gemini API first using the sidebar.")
     elif not st.session_state.db_connected:
         st.warning(" Please connect to a database using the sidebar.")
     else:
+        # --- DEFINE THE HELPER FUNCTION HERE ---
+        # This function processes both example prompts and user chat input
+        def process_user_query(user_query):
+            # 1. Add user message
+            st.session_state.chat_history.append({
+                "role": "user",
+                "content": user_query,
+                "timestamp": datetime.now()
+            })
+            
+            # 2. Show spinner
+            with st.spinner("Processing your query..."):
+                try:
+                    start_time = datetime.now()
+                    
+                    # 3. Generate SQL (using your original function)
+                    sql_query = generate_sql(st.session_state.current_schema, user_query)
+                    
+                    if sql_query:
+                        # 4. Execute SQL
+                        result_df = execute_query(st.session_state.db_engine, sql_query)
+                        
+                        if result_df is not None:
+                            # 5. Process results
+                            # It can now see `max_results` from the sidebar
+                            if len(result_df) > max_results:
+                                result_df = result_df.head(max_results)
+                                result_message = f"Found {len(result_df)} results (showing first {max_results}):"
+                            else:
+                                result_message = f"Found {len(result_df)} results:"
+                            
+                            response_time = (datetime.now() - start_time).total_seconds()
+                            
+                            # 6. Add assistant message
+                            assistant_message = {
+                                "role": "assistant",
+                                "content": f" {result_message}",
+                                "sql": sql_query,
+                                "data": result_df,
+                                "timestamp": datetime.now(),
+                                "response_time": response_time,
+                                "chart_selection": "Bar Chart" # Default chart
+                            }
+                            st.session_state.chat_history.append(assistant_message)
+                            
+                            # Add to query history
+                            st.session_state.query_history.append({
+                                "query": user_query,
+                                "sql": sql_query,
+                                "timestamp": datetime.now(),
+                                "rows_returned": len(result_df),
+                                "response_time": response_time
+                            })
+                        else:
+                            # 7. Add "no results" message
+                            st.session_state.chat_history.append({
+                                "role": "assistant",
+                                "content": "Query executed but returned no results.",
+                                "sql": sql_query,
+                                "timestamp": datetime.now()
+                            })
+                    else:
+                        # 8. Add "could not generate SQL" message
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": "Could not generate SQL query. Please try rephrasing your question.",
+                            "timestamp": datetime.now()
+                        })
+                
+                except Exception as e:
+                    # 9. Add error message
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": f"Error processing query: {str(e)}",
+                        "timestamp": datetime.now()
+                    })
+            
+            # 10. Rerun
+            st.rerun()
+
+        # --- END OF HELPER FUNCTION ---
+
+
         # Example queries section
         st.subheader(" Example Queries")
         col1, col2, col3, col4 = st.columns(4)
@@ -269,13 +353,10 @@ with tab1:
         
         for col, query in zip([col1, col2, col3, col4], example_queries):
             with col:
+                # --- MODIFIED ---
+                # This now calls the helper function directly
                 if st.button(query, use_container_width=True):
-                    st.session_state.chat_history.append({
-                        "role": "user",
-                        "content": query,
-                        "timestamp": datetime.now()
-                    })
-                    st.rerun()
+                    process_user_query(query)
         
         st.divider()
         
@@ -284,33 +365,28 @@ with tab1:
         
         with chat_container:
             # Display chat history
+            # (This logic remains unchanged)
             for idx, message in enumerate(st.session_state.chat_history):
                 with st.chat_message(message["role"]):
                     st.write(message["content"])
                     
-                    # If assistant message, show additional info
                     if message["role"] == "assistant":
                         if "sql" in message and show_sql_query:
                             with st.expander("View Generated SQL"):
                                 st.code(message["sql"], language="sql")
                         
-                        # --- NEW DYNAMIC VISUALIZATION LOGIC ---
                         if "data" in message and message["data"] is not None:
                             df = message["data"]
                             
-                            # Define chart options
                             chart_options = ["Data Table"]
                             if enable_visualizations:
                                 chart_options.extend(["Bar Chart", "Line Chart", "Scatter Plot"])
                             
-                            # Get default selection
                             default_selection = message.get("chart_selection", "Bar Chart")
                             if default_selection not in chart_options:
                                 default_selection = "Data Table"
                             
                             default_index = chart_options.index(default_selection)
-
-                            # Create unique key for the selectbox
                             select_key = f"chart_select_{idx}"
                             
                             selected_chart = st.selectbox(
@@ -320,10 +396,7 @@ with tab1:
                                 key=select_key
                             )
                             
-                            # Store the user's choice back into the message for persistence
                             message["chart_selection"] = selected_chart
-
-                            # --- Conditionally render based on selection ---
                             numeric_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns
                             all_cols = df.columns
                             
@@ -333,28 +406,28 @@ with tab1:
                                 
                                 elif selected_chart == "Bar Chart":
                                     if len(numeric_cols) > 0 and len(all_cols) > 1:
-                                        x_col = all_cols[0] # Guess X
-                                        y_col = numeric_cols[0] # Guess Y
+                                        x_col = all_cols[0]
+                                        y_col = numeric_cols[0]
                                         chart = px.bar(df.head(20), x=x_col, y=y_col, title=f"{y_col} by {x_col}")
                                         st.plotly_chart(chart, use_container_width=True)
                                     else:
                                         st.info("Bar chart requires at least one categorical and one numeric column. Showing data table.")
                                         st.dataframe(df, use_container_width=True)
-
+                                
                                 elif selected_chart == "Line Chart":
                                     if len(numeric_cols) > 0 and len(all_cols) > 1:
-                                        x_col = all_cols[0] # Guess X
-                                        y_col = numeric_cols[0] # Guess Y
+                                        x_col = all_cols[0]
+                                        y_col = numeric_cols[0]
                                         chart = px.line(df.head(20), x=x_col, y=y_col, title=f"{y_col} by {x_col}")
                                         st.plotly_chart(chart, use_container_width=True)
                                     else:
                                         st.info("Line chart requires at least one X-axis column and one numeric Y-axis column. Showing data table.")
                                         st.dataframe(df, use_container_width=True)
-
+                                
                                 elif selected_chart == "Scatter Plot":
                                     if len(numeric_cols) >= 2:
-                                        x_col = numeric_cols[0] # Guess X
-                                        y_col = numeric_cols[1] # Guess Y
+                                        x_col = numeric_cols[0]
+                                        y_col = numeric_cols[1]
                                         chart = px.scatter(df.head(20), x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
                                         st.plotly_chart(chart, use_container_width=True)
                                     else:
@@ -363,9 +436,8 @@ with tab1:
                             
                             except Exception as e:
                                 st.error(f"Could not generate chart: {e}")
-                                st.dataframe(df, use_container_width=True) # Fallback to dataframe
+                                st.dataframe(df, use_container_width=True)
 
-                            # Download button (remains the same)
                             unique_key = f"download_{idx}"
                             csv = df.to_csv(index=False)
                             st.download_button(
@@ -375,89 +447,15 @@ with tab1:
                                 mime="text/csv",
                                 key=unique_key
                             )
-                        # --- END OF NEW VISUALIZATION LOGIC ---
         
         # Chat input
         user_query = st.chat_input("Ask a question about your database...", key="chat_input")
         
+        # --- MODIFIED ---
+        # This now also calls the helper function
         if user_query:
-            # Add user message
-            st.session_state.chat_history.append({
-                "role": "user",
-                "content": user_query,
-                "timestamp": datetime.now()
-            })
+            process_user_query(user_query)
             
-            # Process query using backend functions
-            with st.spinner("Processing your query..."):
-                try:
-                    start_time = datetime.now()
-                    
-                    # Step 1: Generate SQL using Gemini
-                    # (We will modify this in Part 2)
-                    sql_query = generate_sql(st.session_state.current_schema, user_query)
-                    
-                    if sql_query:
-                        # Step 2: Execute the query
-                        result_df = execute_query(st.session_state.db_engine, sql_query)
-                        
-                        if result_df is not None:
-                            # Limit results if needed
-                            if len(result_df) > max_results:
-                                result_df = result_df.head(max_results)
-                                result_message = f"Found {len(result_df)} results (showing first {max_results}):"
-                            else:
-                                result_message = f"Found {len(result_df)} results:"
-                            
-                            # --- MODIFIED ---
-                            # Step 3 is removed. No chart is generated here.
-                            
-                            # Calculate response time
-                            response_time = (datetime.now() - start_time).total_seconds()
-                            
-                            # Add assistant response
-                            assistant_message = {
-                                "role": "assistant",
-                                "content": f" {result_message}",
-                                "sql": sql_query,
-                                "data": result_df,
-                                "timestamp": datetime.now(),
-                                "response_time": response_time,
-                                "chart_selection": "Bar Chart" # <-- ADDED: Set default
-                            }
-                            
-                            st.session_state.chat_history.append(assistant_message)
-                            
-                            # Add to query history
-                            st.session_state.query_history.append({
-                                "query": user_query,
-                                "sql": sql_query,
-                                "timestamp": datetime.now(),
-                                "rows_returned": len(result_df),
-                                "response_time": response_time
-                            })
-                        else:
-                            st.session_state.chat_history.append({
-                                "role": "assistant",
-                                "content": "Query executed but returned no results.",
-                                "sql": sql_query,
-                                "timestamp": datetime.now()
-                            })
-                    else:
-                        st.session_state.chat_history.append({
-                            "role": "assistant",
-                            "content": "Could not generate SQL query. Please try rephrasing your question.",
-                            "timestamp": datetime.now()
-                        })
-                
-                except Exception as e:
-                    st.session_state.chat_history.append({
-                        "role": "assistant",
-                        "content": f"Error processing query: {str(e)}",
-                        "timestamp": datetime.now()
-                    })
-            
-            st.rerun()
 # TAB 2: QUERY HISTORY
 with tab2:
     st.subheader(" Query History")
