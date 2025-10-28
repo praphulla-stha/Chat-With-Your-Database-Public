@@ -92,21 +92,40 @@ def get_all_tables(engine):
         st.error(f"Error getting tables: {e}")
         return {}
 
-def generate_sql(schema, question):
+def generate_sql(schema, question, chat_history):
     """Generates SQL query from a natural language question using Gemini."""
     try:
         model = genai.GenerativeModel('models/gemini-pro-latest')
+        
+        # --- NEW: Build the conversational history ---
+        history_prompt = ""
+        # Get the last 4 messages (2 user, 2 assistant) before the current query
+        for message in chat_history[-5:-1]: 
+            if message["role"] == "user":
+                history_prompt += f"User: {message['content']}\n"
+            elif message["role"] == "assistant" and "sql" in message:
+                # Add the generated SQL as the assistant's context
+                history_prompt += f"Assistant (SQL): {message['sql']}\n"
+        # --- END NEW ---
+
         prompt = f"""You are an expert SQLite data analyst.
         Given the database schema below, you must generate a valid SQLite query to answer the user's question.
         Pay close attention to the column names in the schema and only use columns that exist in the table.
+        Use the conversation history provided below for context, as the user might be asking a follow-up question.
         Only return the SQL query and nothing else.
 
         Schema:
         {schema}
+        
+        ---
+        Conversation History (for context):
+        {history_prompt}
+        ---
 
-        Question:
+        New Question:
         {question}
         """
+        
         response = model.generate_content(prompt)
         sql_query = response.text.replace("```sql", "").replace("```", "").strip()
         return sql_query
@@ -250,7 +269,6 @@ st.markdown("Ask questions about your data in natural language - no SQL required
 tab1, tab2, tab3, tab4 = st.tabs(["💭 Chat", "📜 Query History", "📊 Insights", "ℹ️ Help"])
 
 # TAB 1: CHAT INTERFACE
-# TAB 1: CHAT INTERFACE
 with tab1:
     if not st.session_state.api_configured:
         st.warning(" Please configure Google Gemini API first using the sidebar.")
@@ -272,8 +290,11 @@ with tab1:
                 try:
                     start_time = datetime.now()
                     
-                    # 3. Generate SQL (using your original function)
-                    sql_query = generate_sql(st.session_state.current_schema, user_query)
+                    sql_query = generate_sql(
+                        st.session_state.current_schema, 
+                        user_query, 
+                        st.session_state.chat_history  # <-- This is the new part
+                    )
                     
                     if sql_query:
                         # 4. Execute SQL
@@ -281,7 +302,6 @@ with tab1:
                         
                         if result_df is not None:
                             # 5. Process results
-                            # It can now see `max_results` from the sidebar
                             if len(result_df) > max_results:
                                 result_df = result_df.head(max_results)
                                 result_message = f"Found {len(result_df)} results (showing first {max_results}):"
@@ -353,8 +373,6 @@ with tab1:
         
         for col, query in zip([col1, col2, col3, col4], example_queries):
             with col:
-                # --- MODIFIED ---
-                # This now calls the helper function directly
                 if st.button(query, use_container_width=True):
                     process_user_query(query)
         
@@ -365,7 +383,6 @@ with tab1:
         
         with chat_container:
             # Display chat history
-            # (This logic remains unchanged)
             for idx, message in enumerate(st.session_state.chat_history):
                 with st.chat_message(message["role"]):
                     st.write(message["content"])
@@ -451,11 +468,9 @@ with tab1:
         # Chat input
         user_query = st.chat_input("Ask a question about your database...", key="chat_input")
         
-        # --- MODIFIED ---
-        # This now also calls the helper function
         if user_query:
             process_user_query(user_query)
-            
+
 # TAB 2: QUERY HISTORY
 with tab2:
     st.subheader(" Query History")
