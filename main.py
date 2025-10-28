@@ -143,6 +143,42 @@ def execute_query(engine, sql_query):
         st.error(f"Error executing query: {e}")
         return None
 
+def generate_summary(user_query, result_df):
+    """Generates a natural language summary of the query results."""
+    if result_df.empty:
+        return None # No summary for empty data
+        
+    try:
+        model = genai.GenerativeModel('models/gemini-pro-latest')
+        
+        # Convert DataFrame to a concise string format for the prompt
+        # We limit it to 10 rows to avoid a huge prompt
+        df_string = result_df.head(10).to_csv(index=False)
+        
+        prompt = f"""
+        Given the user's original question:
+        "{user_query}"
+
+        And the data that was returned from the database (first 10 rows):
+        {df_string}
+
+        Please provide a very concise, one-sentence natural language summary of the key insight.
+        - If it's a list (e.g., top 5), state the top item.
+        - If it's a calculation, state the main result.
+        - If it's a trend, briefly describe the trend.
+        
+        Example: "The 'Food and beverages' product line had the highest total sales."
+        
+        Provide only the summary sentence.
+        Summary:
+        """
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    except Exception as e:
+        # Don't show a big error, just log it to the console or a warning
+        st.warning(f"Could not generate summary: {e}")
+        return None # Return None if summary fails, so the app doesn't crash
+
 # SESSION STATE INITIALIZATION
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
@@ -290,10 +326,11 @@ with tab1:
                 try:
                     start_time = datetime.now()
                     
+                    # 3. Generate SQL (with chat history)
                     sql_query = generate_sql(
                         st.session_state.current_schema, 
                         user_query, 
-                        st.session_state.chat_history  # <-- This is the new part
+                        st.session_state.chat_history
                     )
                     
                     if sql_query:
@@ -308,6 +345,10 @@ with tab1:
                             else:
                                 result_message = f"Found {len(result_df)} results:"
                             
+                            # --- NEW (Change 1): Generate Summary ---
+                            summary_text = generate_summary(user_query, result_df)
+                            # --- END NEW ---
+
                             response_time = (datetime.now() - start_time).total_seconds()
                             
                             # 6. Add assistant message
@@ -316,6 +357,7 @@ with tab1:
                                 "content": f" {result_message}",
                                 "sql": sql_query,
                                 "data": result_df,
+                                "summary": summary_text, # --- NEW (Change 2): Add summary to message ---
                                 "timestamp": datetime.now(),
                                 "response_time": response_time,
                                 "chart_selection": "Bar Chart" # Default chart
@@ -385,8 +427,11 @@ with tab1:
             # Display chat history
             for idx, message in enumerate(st.session_state.chat_history):
                 with st.chat_message(message["role"]):
-                    st.write(message["content"])
+                    st.write(message["content"]) # This is the "Found 5 results..."
                     
+                    if message["role"] == "assistant" and "summary" in message and message["summary"]:
+                        st.markdown(f"**Summary:** {message['summary']}")
+
                     if message["role"] == "assistant":
                         if "sql" in message and show_sql_query:
                             with st.expander("View Generated SQL"):
