@@ -1,12 +1,23 @@
 import pandas as pd
+import os
 from sqlalchemy import create_engine
 
-df = pd.read_csv(r"C:\Users\lenovo\Desktop\projects\Chat-With-Your-Database\SuperMarket_Analysis.csv")
+# Use relative path 
+csv_path = os.path.join(os.getcwd(), "SuperMarket_Analysis.csv")
 
-df.columns = df.columns.str.replace(' ', '_').str.lower()
+if not os.path.exists(csv_path):
+    print(" CSV file not found. Please place 'SuperMarket_Analysis.csv' in the project folder.")
+else:
+    print(" CSV file found! Loading data...")
+    df = pd.read_csv(csv_path)
 
-engine = create_engine('sqlite:///supermarket.db')
+    # Clean column names
+    df.columns = df.columns.str.replace(' ', '_').str.lower()
 
-df.to_sql('sales', engine, index=False, if_exists='replace')
+    # Create SQLite database
+    engine = create_engine('sqlite:///supermarket.db')
 
-print("Database 'supermarket.db' created successfully with a 'sales' table.")
+    # Export to database
+    df.to_sql('sales', engine, index=False, if_exists='replace')
+
+    print(" Database 'supermarket.db' created successfully!")

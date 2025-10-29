@@ -64,12 +64,24 @@ pip install -r requirements.txt
 
 ### 4. Download the Dataset
 
-Download the necessary dataset from Kaggle and place it in the root of the project folder.
-
+Download the dataset from Kaggle :
 * **Dataset:** [Supermarket Sales](https://www.kaggle.com/datasets/faresashraf1001/supermarket-sales)  
-* **Required file:** `supermarket_sales - Sheet1.csv`
 
-### 5. Set Up Your API Key
+After downloading:
+
+  1. Rename it to SuperMarket_Analysis.csv (if not already).
+  2. Place it inside the project’s root folder (same level as main.py).
+
+  ### 5. Create the Database
+
+Run the setup script to load the CSV data into an SQLite database.  
+This will create a `supermarket.db` file:
+~~~bash
+python .\src\db\setup_database.py
+~~~
+
+
+### 6. Set Up Your API Key
 
 The application requires a **Google Gemini API key** to function.  
 Get your API key from [Google AI Studio](https://aistudio.google.com/).
@@ -79,13 +91,7 @@ Add your API key to the `.env` file in the following format:
 GOOGLE_API_KEY="your_api_key_here"
 ~~~
 
-### 6. Create the Database
 
-Run the setup script to load the CSV data into an SQLite database.  
-This will create a `supermarket.db` file:
-~~~bash
-python .\src\db\setup_database.py
-~~~
 
 ---
 
