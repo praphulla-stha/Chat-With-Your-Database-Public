@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from app.db.sql_security import (
+from db.sql_security import (
     SQLSecurityValidator, 
     QueryExecutionValidator, 
     validate_and_sanitize
