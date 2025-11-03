@@ -4,6 +4,7 @@ import plotly.express as px
 from datetime import datetime
 import os
 from dotenv import load_dotenv
+from src.db.sql_security import SQLSecurityValidator, validate_and_sanitize
 
 # Import backend functions 
 from sqlalchemy import create_engine, text
@@ -334,8 +335,24 @@ with tab1:
                     )
                     
                     if sql_query:
-                        # 4. Execute SQL
-                        result_df = execute_query(st.session_state.db_engine, sql_query)
+                        validator = SQLSecurityValidator()
+                        sanitized_user_query = validator.sanitize_user_input(user_query)  # Clean user input
+    
+                        is_valid, sanitized_sql, errors = validate_and_sanitize(sql_query, sanitized_user_query)
+    
+                        if not is_valid:
+                            error_msg = "Invalid SQL generated. Please try rephrasing your question."
+                            if errors:
+                                error_msg += f" Reasons: {', '.join(errors)}"
+                            st.session_state.chat_history.append({
+                                "role": "assistant",
+                                "content": error_msg,
+                                "timestamp": datetime.now()
+                            })
+                            return  
+    
+                    # Use sanitized_sql instead of sql_query
+                        result_df = execute_query(st.session_state.db_engine, sanitized_sql)
                         
                         if result_df is not None:
                             # 5. Process results
