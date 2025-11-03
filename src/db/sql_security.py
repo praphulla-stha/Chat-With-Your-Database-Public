@@ -228,26 +228,37 @@ class QueryExecutionValidator:
     
     @staticmethod
     def log_query_execution(query: str, success: bool, error: Optional[str] = None):
-        """
-        Log query execution for audit trail
-        
-        Args:
-            query: The executed query
-            success: Whether execution was successful
-            error: Error message if any
-        """
+        """Log query execution to JSON file"""
         import datetime
+        import json
+        from pathlib import Path
+
         timestamp = datetime.datetime.now().isoformat()
-        
+    
         log_entry = {
             'timestamp': timestamp,
-            'query': query,
+            'query': query.strip(),
             'success': success,
             'error': error
         }
     
+        # Append to JSON file
+        log_file = Path("query_log.json")
+        try:
+            if log_file.exists():
+                with open(log_file, "r+", encoding="utf-8") as f:
+                    logs = json.load(f)
+                    logs.append(log_entry)
+                    f.seek(0)
+                    json.dump(logs, f, indent=2)
+            else:
+                with open(log_file, "w", encoding="utf-8") as f:
+                    json.dump([log_entry], f, indent=2)
+        except Exception as e:
+            print(f"Logging failed: {e}")
+    
         status = "SUCCESS" if success else "FAILED"
-        print(f"[{timestamp}] QUERY {status}: {query[:100]}...")
+        print(f"[{timestamp}] QUERY {status}: {query[:100]}{'...' if len(query)>100 else ''}")
         if error:
             print(f"[{timestamp}] ERROR: {error}")
 
