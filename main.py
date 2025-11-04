@@ -107,7 +107,7 @@ def get_all_tables(engine):
 def generate_sql(schema, question, chat_history):
     """Generates SQL query from a natural language question using Gemini."""
     try:
-        model = genai.GenerativeModel('models/gemini-pro-latest')
+        model = genai.GenerativeModel('models/gemini-2.0-flash')
         
         history_prompt = ""
         for message in chat_history[-5:-1]: 
@@ -117,26 +117,37 @@ def generate_sql(schema, question, chat_history):
                 history_prompt += f"Assistant (SQL): {message['sql']}\n"
 
         prompt = f"""You are an expert SQLite data analyst.
-        Given the database schema below, you must generate a valid SQLite query to answer the user's question.
-        Pay close attention to the column names in the schema and only use columns that exist in the table.
-        Use the conversation history provided below for context, as the user might be asking a follow-up question.
-        Only return the SQL query and nothing else.
+Given the database schema below, generate a valid SQLite query to answer the user's question.
+Return ONLY the SQL query inside ```sql
 
-        Schema:
-        {schema}
-        
-        ---
-        Conversation History (for context):
-        {history_prompt}
-        ---
+Schema:
+{schema}
 
-        New Question:
-        {question}
-        """
-        
+Conversation History:
+{history_prompt}
+
+Question:
+{question}
+
+SQL Query:
+```sql
+"""
+
         response = model.generate_content(prompt)
-        sql_query = response.text.replace("```sql", "").replace("```", "").strip()
-        return sql_query
+        raw_text = response.text
+        
+        # Extract SQL between first ```sql
+        start = raw_text.find("```sql")
+        end = raw_text.find("```", start + 6)
+        
+        if start != -1 and end != -1:
+            sql_query = raw_text[start + 6:end].strip()
+        else:
+            # Fallback: take everything after first ```sql
+            sql_query = raw_text.split("```sql", 1)[-1].split("```", 1)[0].strip()
+        
+        return sql_query if sql_query else None
+
     except Exception as e:
         st.error(f"Error generating SQL: {e}")
         return None
@@ -152,36 +163,28 @@ def execute_query(engine, sql_query):
         return None
 
 def generate_summary(user_query, result_df):
-    """Generates a natural language summary of the query results."""
     if result_df.empty:
         return None 
         
     try:
-        model = genai.GenerativeModel('models/gemini-pro-latest')
+        model = genai.GenerativeModel('models/gemini-2.0-flash')
         df_string = result_df.head(10).to_csv(index=False)
         
         prompt = f"""
-        Given the user's original question:
-        "{user_query}"
+Answer in ONE sentence.
 
-        And the data that was returned from the database (first 10 rows):
-        {df_string}
+Question: "{user_query}"
+Data (first 10 rows):
+{df_string}
 
-        Please provide a very concise, one-sentence natural language summary of the key insight.
-        - If it's a list (e.g., top 5), state the top item.
-        - If it's a calculation, state the main result.
-        - If it's a trend, briefly describe the trend.
-        
-        Example: "The 'Food and beverages' product line had the highest total sales."
-        
-        Provide only the summary sentence.
-        Summary:
-        """
+Summary:
+"""
         response = model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
         st.warning(f"Could not generate summary: {e}")
         return None
+
 
 # SESSION STATE INITIALIZATION
 if 'chat_history' not in st.session_state:
