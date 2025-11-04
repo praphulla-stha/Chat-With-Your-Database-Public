@@ -1,0 +1,4 @@
+# config.yaml
+database:
+  default_db_path: "supermarket.db"
+  csv_path: "data/SuperMarket_Analysis.csv"  # optional, for auto-load

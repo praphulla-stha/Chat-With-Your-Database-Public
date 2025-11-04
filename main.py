@@ -4,7 +4,9 @@ import plotly.express as px
 from datetime import datetime
 import os
 from dotenv import load_dotenv
-import json  # <-- Added for JSON logging
+import json
+import yaml
+import io
 
 # Import backend functions 
 from sqlalchemy import create_engine, text
@@ -20,7 +22,7 @@ from src.db.sql_security import (
 # Page configuration
 st.set_page_config(
     page_title="Chat With Your Database",
-    page_icon="Speech balloon",
+    page_icon="Database",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -69,43 +71,47 @@ st.markdown("""
 LOG_FILE = "query_log.json"
 if not os.path.exists(LOG_FILE):
     with open(LOG_FILE, "w") as f:
-        json.dump([], f)  # Start with empty list
+        json.dump([], f)
+
+# --- Load config ---
+def load_config():
+    try:
+        with open("config.yaml", "r") as f:
+            return yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        st.error("config.yaml not found! Create it in project root.")
+        return {}
+    except Exception as e:
+        st.error(f"Error loading config: {e}")
+        return {}
 
 def get_schema(engine):
-    """Extracts the CREATE TABLE statement for the 'sales' table."""
     try:
         with engine.connect() as connection:
             query = text("SELECT sql FROM sqlite_master WHERE name = 'sales'")
             schema = connection.execute(query).scalar_one_or_none()
-            if schema:
-                return schema
-            else:
-                return None
+            return schema if schema else "No schema found."
     except Exception as e:
         st.error(f"Error getting schema: {e}")
         return None
 
 def get_all_tables(engine):
-    """Get all table names and their columns from the database."""
     try:
         with engine.connect() as connection:
             query = text("SELECT name FROM sqlite_master WHERE type='table'")
             tables = connection.execute(query).fetchall()
-            
             schema_dict = {}
             for table in tables:
                 table_name = table[0]
                 col_query = text(f"PRAGMA table_info({table_name})")
                 columns = connection.execute(col_query).fetchall()
                 schema_dict[table_name] = [col[1] for col in columns]
-            
             return schema_dict
     except Exception as e:
         st.error(f"Error getting tables: {e}")
         return {}
 
 def generate_sql(schema, question, chat_history):
-    """Generates SQL query from a natural language question using Gemini."""
     try:
         model = genai.GenerativeModel('models/gemini-2.0-flash')
         
@@ -118,7 +124,7 @@ def generate_sql(schema, question, chat_history):
 
         prompt = f"""You are an expert SQLite data analyst.
 Given the database schema below, generate a valid SQLite query to answer the user's question.
-Return ONLY the SQL query inside ```sql
+Return ONLY the SQL query inside ```sql ... ``` code block. No explanations.
 
 Schema:
 {schema}
@@ -143,7 +149,6 @@ SQL Query:
         if start != -1 and end != -1:
             sql_query = raw_text[start + 6:end].strip()
         else:
-            # Fallback: take everything after first ```sql
             sql_query = raw_text.split("```sql", 1)[-1].split("```", 1)[0].strip()
         
         return sql_query if sql_query else None
@@ -153,7 +158,6 @@ SQL Query:
         return None
 
 def execute_query(engine, sql_query):
-    """Executes the SQL query and returns the result as a pandas DataFrame."""
     try:
         with engine.connect() as connection:
             result_df = pd.read_sql_query(text(sql_query), connection)
@@ -185,8 +189,11 @@ Summary:
         st.warning(f"Could not generate summary: {e}")
         return None
 
-
 # SESSION STATE INITIALIZATION
+if 'last_uploaded_csv' not in st.session_state:
+    st.session_state.last_uploaded_csv = None
+if 'current_db_file' not in st.session_state:
+    st.session_state.current_db_file = None
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
 if 'query_history' not in st.session_state:
@@ -223,8 +230,6 @@ with st.sidebar:
             st.code("""
 # Create a .env file in your project folder with:
 GOOGLE_API_KEY=your_actual_api_key_here
-
-# Then restart the Streamlit app
             """, language="bash")
     
     st.divider()
@@ -232,12 +237,52 @@ GOOGLE_API_KEY=your_actual_api_key_here
     st.subheader("Database Connection")
     
     with st.expander("Database Settings", expanded=not st.session_state.db_connected):
+        config = load_config()
+        db_config = config.get("database", {})
+        
+        # Option 1: Upload CSV
+        uploaded_csv = st.file_uploader("Upload CSV to create database", type=['csv'], key="csv_uploader")
+
+        # Only process if file is uploaded and different from last
+        if uploaded_csv and (not hasattr(st.session_state, 'last_uploaded_csv') or 
+                           st.session_state.last_uploaded_csv != uploaded_csv.name):
+            
+            with st.spinner("Creating database from CSV..."):
+                try:
+                    df = pd.read_csv(uploaded_csv)
+                    df.columns = df.columns.str.replace(' ', '_').str.lower()
+                    
+                    # Use unique temp DB name
+                    temp_db = f"temp_{uploaded_csv.name.replace('.csv', '')}_{int(datetime.now().timestamp())}.db"
+                    engine = create_engine(f'sqlite:///{temp_db}')
+                    df.to_sql('sales', engine, index=False, if_exists='replace')
+                    
+                    # Update session state
+                    st.session_state.db_engine = engine
+                    st.session_state.db_connected = True
+                    st.session_state.current_schema = get_schema(engine)
+                    st.session_state.all_tables = get_all_tables(engine)
+                    st.session_state.last_uploaded_csv = uploaded_csv.name
+                    st.session_state.current_db_file = temp_db
+                    
+                    st.success(f"Database created: `{temp_db}`")
+                    
+                except Exception as e:
+                    st.error(f"Failed to create DB: {e}")
+        elif uploaded_csv and hasattr(st.session_state, 'last_uploaded_csv') and \
+             st.session_state.last_uploaded_csv == uploaded_csv.name:
+            st.info(f"Using existing DB from: `{st.session_state.current_db_file}`")
+
+        
+        # Option 2: Select DB
         db_file = st.text_input(
-            "Database File Path",
-            value="supermarket.db",
-            help="Path to your SQLite database file"
+            "Or enter path to existing SQLite DB",
+            value=db_config.get("default_db_path", "supermarket.db"),
+            help="e.g., mydata.db"
         )
+        
         col1, col2 = st.columns(2)
+
         with col1:
             if st.button("Connect", use_container_width=True):
                 if not st.session_state.api_configured:
@@ -255,9 +300,11 @@ GOOGLE_API_KEY=your_actual_api_key_here
                         st.session_state.db_connected = True
                         st.session_state.current_schema = schema
                         st.session_state.all_tables = all_tables
+                        st.session_state.current_db_file = db_file
+                        st.session_state.last_uploaded_csv = None  # Reset upload tracking
                         
                         st.success("Connected successfully!")
-                        st.rerun()
+                        # No st.rerun() — Streamlit auto-reruns on button
                     except Exception as e:
                         st.error(f"Connection failed: {e}")
                 else:
@@ -276,7 +323,6 @@ GOOGLE_API_KEY=your_actual_api_key_here
     
     if st.session_state.db_connected:
         st.markdown('<div class="success-box">Database Connected</div>', unsafe_allow_html=True)
-        # Show log file size
         log_size = os.path.getsize(LOG_FILE) if os.path.exists(LOG_FILE) else 0
         st.caption(f"Query log: `query_log.json` ({log_size} bytes)")
     else:
@@ -308,9 +354,9 @@ tab1, tab2, tab3, tab4 = st.tabs(["Chat", "Query History", "Insights", "Help"])
 # TAB 1: CHAT INTERFACE
 with tab1:
     if not st.session_state.api_configured:
-        st.warning(" Please configure Google Gemini API first using the sidebar.")
+        st.warning("Please configure Google Gemini API first using the sidebar.")
     elif not st.session_state.db_connected:
-        st.warning(" Please connect to a database using the sidebar.")
+        st.warning("Please connect to a database using the sidebar.")
     else:
         def process_user_query(user_query):
             st.session_state.chat_history.append({
@@ -344,7 +390,6 @@ with tab1:
                                 "content": error_msg,
                                 "timestamp": datetime.now()
                             })
-                            # Log invalid attempt
                             QueryExecutionValidator.log_query_execution(
                                 query=sql_query,
                                 success=False,
@@ -367,7 +412,7 @@ with tab1:
                             
                             assistant_message = {
                                 "role": "assistant",
-                                "content": f" {result_message}",
+                                "content": f"{result_message}",
                                 "sql": sanitized_sql,
                                 "data": result_df,
                                 "summary": summary_text,
@@ -385,7 +430,6 @@ with tab1:
                                 "response_time": response_time
                             })
 
-                            # LOG SUCCESS
                             QueryExecutionValidator.log_query_execution(
                                 query=sanitized_sql,
                                 success=True,
@@ -427,7 +471,7 @@ with tab1:
             st.rerun()
 
         # Example queries
-        st.subheader(" Example Queries")
+        st.subheader("Example Queries")
         col1, col2, col3, col4 = st.columns(4)
         example_queries = [
             "List the 20 most recent sales with key details.",
@@ -477,7 +521,7 @@ with tab1:
                             )
                             
                             message["chart_selection"] = selected_chart
-                            numeric_cols = found = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns
+                            numeric_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns
                             all_cols = df.columns
                             
                             try:
@@ -491,7 +535,7 @@ with tab1:
                                         chart = px.bar(df.head(20), x=x_col, y=y_col, title=f"{y_col} by {x_col}")
                                         st.plotly_chart(chart, use_container_width=True)
                                     else:
-                                        st.info("Bar chart requires at least one categorical and one numeric column. Showing data table.")
+                                        st.info("Bar chart requires at least one categorical and one numeric column.")
                                         st.dataframe(df, use_container_width=True)
                                 
                                 elif selected_chart == "Line Chart":
@@ -501,7 +545,7 @@ with tab1:
                                         chart = px.line(df.head(20), x=x_col, y=y_col, title=f"{y_col} by {x_col}")
                                         st.plotly_chart(chart, use_container_width=True)
                                     else:
-                                        st.info("Line chart requires at least one X-axis column and one numeric Y-axis column. Showing data table.")
+                                        st.info("Line chart requires at least one X-axis column and one numeric Y-axis column.")
                                         st.dataframe(df, use_container_width=True)
                                 
                                 elif selected_chart == "Scatter Plot":
@@ -511,7 +555,7 @@ with tab1:
                                         chart = px.scatter(df.head(20), x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
                                         st.plotly_chart(chart, use_container_width=True)
                                     else:
-                                        st.info("Scatter plot requires at least two numeric columns. Showing data table.")
+                                        st.info("Scatter plot requires at least two numeric columns.")
                                         st.dataframe(df, use_container_width=True)
                             
                             except Exception as e:
@@ -532,6 +576,30 @@ with tab1:
         if user_query:
             process_user_query(user_query)
 
-# --- REST OF TABS (unchanged) ---
-# [Query History, Insights, Help tabs remain exactly as in your original code]
-# (Omitted here for brevity — copy from your original file)
+# --- OTHER TABS (unchanged) ---
+with tab2:
+    st.header("Query History")
+    if st.session_state.query_history:
+        for q in st.session_state.query_history:
+            st.write(f"**{q['timestamp'].strftime('%H:%M:%S')}** - {q['query']}")
+            st.code(q['sql'], language="sql")
+    else:
+        st.info("No queries yet.")
+
+with tab3:
+    st.header("Insights")
+    st.info("Coming soon: Auto-generated insights and trends.")
+
+with tab4:
+    st.header("Help")
+    st.markdown("""
+    ### How to Use
+    1. Upload a CSV or connect to a `.db` file
+    2. Ask questions in natural language
+    3. View results, charts, and summaries
+
+    ### Security
+    - All SQL is validated
+    - No DROP/DELETE allowed
+    - Results limited for safety
+    """)
