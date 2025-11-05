@@ -19,6 +19,55 @@ from src.db.sql_security import (
     QueryExecutionValidator
 )
 
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+import io
+from PIL import Image as PILImage
+
+def export_to_pdf(df, chart_fig, summary, query):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter)
+    styles = getSampleStyleSheet()
+    elements = []
+
+    # Title
+    elements.append(Paragraph(f"<b>Query:</b> {query}", styles['Title']))
+    elements.append(Spacer(1, 12))
+
+    # Summary
+    if summary:
+        elements.append(Paragraph(f"<b>Summary:</b> {summary}", styles['Normal']))
+        elements.append(Spacer(1, 12))
+
+    # Table
+    data = [df.columns.tolist()] + df.values.tolist()
+    table = Table(data)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ]))
+    elements.append(table)
+    elements.append(Spacer(1, 12))
+
+    # Chart
+    img_buffer = io.BytesIO()
+    chart_fig.write_image(img_buffer, format="png")
+    img_buffer.seek(0)
+    img = Image(img_buffer, width=500, height=300)
+    elements.append(img)
+
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
 # Page configuration
 st.set_page_config(
     page_title="Chat With Your Database",
@@ -534,6 +583,37 @@ with tab1:
                                         y_col = numeric_cols[0]
                                         chart = px.bar(df.head(20), x=x_col, y=y_col, title=f"{y_col} by {x_col}")
                                         st.plotly_chart(chart, use_container_width=True)
+                                        # --- EXPORT BUTTONS ---
+                                        col_png, col_pdf = st.columns(2)
+        
+                                        with col_png:
+                                            png_buffer = io.BytesIO()
+                                            chart.write_image(png_buffer, format="png")
+                                            png_buffer.seek(0)
+                                            st.download_button(
+                                                label="Export Chart as PNG",
+                                                data=png_buffer,
+                                                file_name=f"chart_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                                                mime="image/png",
+                                                key=f"png_{idx}_{selected_chart.lower().replace(' ', '_')}"
+                                            )
+
+                                        with col_pdf:
+                                            if st.button("Export to PDF", key=f"pdf_btn_{idx}_{selected_chart.lower().replace(' ', '_')}"):
+                                                with st.spinner("Generating PDF report..."):
+                                                    pdf_buffer = export_to_pdf(
+                                                        df.head(50),
+                                                        chart,
+                                                        message.get("summary", "No summary available."),
+                                                        st.session_state.chat_history[-1]["content"] if st.session_state.chat_history else "Unknown query"
+                                                    )
+                                                    st.download_button(
+                                                        label="Download PDF",
+                                                        data=pdf_buffer,
+                                                        file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                                                        mime="application/pdf",
+                                                        key=f"pdf_download_{idx}"
+                                                    )
                                     else:
                                         st.info("Bar chart requires at least one categorical and one numeric column.")
                                         st.dataframe(df, use_container_width=True)
@@ -544,6 +624,37 @@ with tab1:
                                         y_col = numeric_cols[0]
                                         chart = px.line(df.head(20), x=x_col, y=y_col, title=f"{y_col} by {x_col}")
                                         st.plotly_chart(chart, use_container_width=True)
+                                         # --- EXPORT BUTTONS ---
+                                        col_png, col_pdf = st.columns(2)
+        
+                                        with col_png:
+                                            png_buffer = io.BytesIO()
+                                            chart.write_image(png_buffer, format="png")
+                                            png_buffer.seek(0)
+                                            st.download_button(
+                                                label="Export Chart as PNG",
+                                                data=png_buffer,
+                                                file_name=f"chart_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                                                mime="image/png",
+                                                key=f"png_{idx}_{selected_chart.lower().replace(' ', '_')}"
+                                            )
+
+                                        with col_pdf:
+                                            if st.button("Export to PDF", key=f"pdf_btn_{idx}_{selected_chart.lower().replace(' ', '_')}"):
+                                                with st.spinner("Generating PDF report..."):
+                                                    pdf_buffer = export_to_pdf(
+                                                        df.head(50),
+                                                        chart,
+                                                        message.get("summary", "No summary available."),
+                                                        st.session_state.chat_history[-1]["content"] if st.session_state.chat_history else "Unknown query"
+                                                    )
+                                                    st.download_button(
+                                                        label="Download PDF",
+                                                        data=pdf_buffer,
+                                                        file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                                                        mime="application/pdf",
+                                                        key=f"pdf_download_{idx}"
+                                                    )   
                                     else:
                                         st.info("Line chart requires at least one X-axis column and one numeric Y-axis column.")
                                         st.dataframe(df, use_container_width=True)
@@ -554,6 +665,37 @@ with tab1:
                                         y_col = numeric_cols[1]
                                         chart = px.scatter(df.head(20), x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
                                         st.plotly_chart(chart, use_container_width=True)
+                                         # --- EXPORT BUTTONS ---
+                                        col_png, col_pdf = st.columns(2)
+        
+                                        with col_png:
+                                            png_buffer = io.BytesIO()
+                                            chart.write_image(png_buffer, format="png")
+                                            png_buffer.seek(0)
+                                            st.download_button(
+                                                label="Export Chart as PNG",
+                                                data=png_buffer,
+                                                file_name=f"chart_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                                                mime="image/png",
+                                                key=f"png_{idx}_{selected_chart.lower().replace(' ', '_')}"
+                                            )
+
+                                        with col_pdf:
+                                            if st.button("Export to PDF", key=f"pdf_btn_{idx}_{selected_chart.lower().replace(' ', '_')}"):
+                                                with st.spinner("Generating PDF report..."):
+                                                    pdf_buffer = export_to_pdf(
+                                                        df.head(50),
+                                                        chart,
+                                                        message.get("summary", "No summary available."),
+                                                        st.session_state.chat_history[-1]["content"] if st.session_state.chat_history else "Unknown query"
+                                                    )
+                                                    st.download_button(
+                                                        label="Download PDF",
+                                                        data=pdf_buffer,
+                                                        file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                                                        mime="application/pdf",
+                                                        key=f"pdf_download_{idx}"
+                                                    )
                                     else:
                                         st.info("Scatter plot requires at least two numeric columns.")
                                         st.dataframe(df, use_container_width=True)
