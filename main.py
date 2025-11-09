@@ -464,13 +464,45 @@ with tab1:
                 if not df_preview.empty:
                     st.subheader("Suggested Questions")
                     col1, col2, col3 = st.columns(3)
-                    prompts = [
-                        f"Show total sales by {df_preview.columns[5] if len(df_preview.columns) > 5 else 'category'}",
-                        f"Top 5 {df_preview.columns[0] if len(df_preview.columns) > 0 else 'items'} by sales",
-                        f"Average rating by {df_preview.columns[3] if len(df_preview.columns) > 3 else 'group'}",
-                        "Show monthly sales trend",
-                        "Compare sales by gender"
-                    ]
+                    
+                # --- INTELLIGENT SUGGESTED PROMPTS (FILE-AWARE) ---
+                    numeric_cols = df_preview.select_dtypes(include=['number']).columns.tolist()
+                    categorical_cols = df_preview.select_dtypes(include=['object', 'category']).columns.tolist()
+                    date_cols = df_preview.select_dtypes(include=['datetime64', 'datetime']).columns.tolist()
+
+                    # Fallbacks
+                    sales_col = next((col for col in numeric_cols if 'sales' in col.lower() or 'amount' in col.lower() or 'total' in col.lower()), numeric_cols[0] if numeric_cols else 'value')
+                    rating_col = next((col for col in numeric_cols if 'rating' in col.lower()), numeric_cols[1] if len(numeric_cols) > 1 else None)
+                    category_col = next((col for col in categorical_cols if any(x in col.lower() for x in ['category', 'product', 'line', 'type', 'branch', 'city'])), categorical_cols[0] if categorical_cols else 'group')
+                    item_col = df_preview.columns[0] if len(df_preview.columns) > 0 else 'item'
+                    gender_col = next((col for col in categorical_cols if 'gender' in col.lower() or 'sex' in col.lower()), None)
+                    date_col = date_cols[0] if date_cols else None
+
+                    prompts = []
+                    if sales_col and category_col:
+                        prompts.append(f"Show total {sales_col} by {category_col}")
+                    if sales_col:
+                        prompts.append(f"Top 10 {item_col} by {sales_col}")
+                    if rating_col and category_col:
+                        prompts.append(f"Average {rating_col} by {category_col}")
+                    if sales_col and date_col:
+                        prompts.append(f"Show monthly trend of {sales_col}")
+                    elif sales_col:
+                        prompts.append(f"Show trend of {sales_col} over time")
+                    if sales_col and gender_col:
+                        prompts.append(f"Compare {sales_col} by {gender_col}")
+                    elif gender_col:
+                        prompts.append(f"Compare count by {gender_col}")
+
+                    # Always add 1-2 safe fallbacks
+                    if len(prompts) < 3:
+                        prompts += [
+                            "What are the key statistics of the data?",
+                            "Show me a summary of all numeric columns"
+                        ]
+                    prompts = prompts[:5]  # Limit to 5
+
+                
                     for i, p in enumerate(prompts[:3]):
                         with [col1, col2, col3][i]:
                             if st.button(p, use_container_width=True, key=f"smart_{i}"):
