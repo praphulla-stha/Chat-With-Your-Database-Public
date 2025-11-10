@@ -32,21 +32,16 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS 
+# Custom CSS - WORKING VERSION
 st.markdown("""
     <style>
+    /* Main styling */
     .main-header {
         font-size: 2.5rem;
         font-weight: bold;
         color: #1f77b4;
         text-align: center;
         margin-bottom: 1rem;
-    }
-    .stChatMessage {
-        background-color: #f0f2f6;
-        border-radius: 10px;
-        padding: 1rem;
-        margin: 0.5rem 0;
     }
     .success-box {
         padding: 1rem;
@@ -68,6 +63,42 @@ st.markdown("""
         border-left: 4px solid #17a2b8;
         border-radius: 5px;
         margin: 1rem 0;
+    }
+    
+    /* Better table styling */
+    .dataframe {
+        font-size: 0.9rem;
+    }
+    
+    /* Improved expander styling */
+    .streamlit-expanderHeader {
+        font-weight: 600;
+        color: #1f77b4;
+    }
+    
+    /* Better button styling */
+    .stButton > button {
+        border-radius: 8px;
+        transition: all 0.2s ease;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+    }
+    
+    /* Scroll button styling */
+    div[data-testid="column"]:has(button[kind="primary"]) button {
+        background: linear-gradient(135deg, #1f77b4 0%, #155a8a 100%);
+        border: none;
+        font-size: 24px;
+        height: 60px;
+        border-radius: 50%;
+    }
+    
+    div[data-testid="column"]:has(button[kind="primary"]) button:hover {
+        background: linear-gradient(135deg, #155a8a 0%, #0d3a5a 100%);
+        transform: scale(1.05);
     }
     </style>
 """, unsafe_allow_html=True)
@@ -237,29 +268,32 @@ if 'last_uploaded_csv' not in st.session_state:
     st.session_state.last_uploaded_csv = None
 if 'current_db_file' not in st.session_state:
     st.session_state.current_db_file = None
-if 'chat_input' not in st.session_state:
-    st.session_state.chat_input = ""
+if 'scroll_to_bottom' not in st.session_state:
+    st.session_state.scroll_to_bottom = False
+if 'auto_scroll_after_query' not in st.session_state:
+    st.session_state.auto_scroll_after_query = False
 
 # SIDEBAR - CONFIGURATION
 with st.sidebar:
     st.image("https://img.icons8.com/fluency/96/database.png", width=80)
-    st.title("Configuration")    
-    st.subheader("Google Gemini API")
+    st.title("⚙️ Configuration")    
+    
+    st.subheader("🔑 Google Gemini API")
     load_dotenv()
     api_key = os.getenv("GOOGLE_API_KEY")
     if api_key:
         try:
             genai.configure(api_key=api_key)
             st.session_state.api_configured = True
-            st.markdown('<div class="success-box">API Configured from .env</div>', unsafe_allow_html=True)
+            st.markdown('<div class="success-box">✅ API Configured from .env</div>', unsafe_allow_html=True)
         except Exception as e:
             st.session_state.api_configured = False
-            st.markdown(f'<div class="error-box">API Config Error: {str(e)}</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="error-box">❌ API Config Error: {str(e)}</div>', unsafe_allow_html=True)
     else:
         st.session_state.api_configured = False
-        st.markdown('<div class="error-box">API Key Not Found</div>', unsafe_allow_html=True)
+        st.markdown('<div class="error-box">❌ API Key Not Found</div>', unsafe_allow_html=True)
         st.warning("Please add GOOGLE_API_KEY to your .env file")
-        with st.expander("How to add API Key"):
+        with st.expander("📝 How to add API Key"):
             st.code("""
 # Create a .env file in your project folder with:
 GOOGLE_API_KEY=your_actual_api_key_here
@@ -267,17 +301,17 @@ GOOGLE_API_KEY=your_actual_api_key_here
     
     st.divider()
     
-    st.subheader("Database Connection")
+    st.subheader("💾 Database Connection")
     
-    with st.expander("Database Settings", expanded=not st.session_state.db_connected):
+    with st.expander("🔧 Database Settings", expanded=not st.session_state.db_connected):
         config = load_config()
         db_config = config.get("database", {})
         
-        uploaded_csv = st.file_uploader("Upload CSV to create database", type=['csv'], key="csv_uploader")
+        uploaded_csv = st.file_uploader("📤 Upload CSV to create database", type=['csv'], key="csv_uploader")
 
         if uploaded_csv and (st.session_state.last_uploaded_csv is None or 
                            st.session_state.last_uploaded_csv != uploaded_csv.name):
-            with st.spinner("Creating database from CSV..."):
+            with st.spinner("🔄 Creating database from CSV..."):
                 try:
                     df = pd.read_csv(uploaded_csv)
                     df.columns = df.columns.str.replace(' ', '_').str.lower()
@@ -291,12 +325,12 @@ GOOGLE_API_KEY=your_actual_api_key_here
                     st.session_state.all_tables = get_all_tables(engine)
                     st.session_state.last_uploaded_csv = uploaded_csv.name
                     st.session_state.current_db_file = temp_db
-                    st.success(f"Database created: `{temp_db}`")
+                    st.success(f"✅ Database created: `{temp_db}`")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Failed to create DB: {e}")
+                    st.error(f"❌ Failed to create DB: {e}")
         elif uploaded_csv and st.session_state.last_uploaded_csv == uploaded_csv.name:
-            st.info(f"Using existing DB from: `{st.session_state.current_db_file}`")
+            st.info(f"ℹ️ Using existing DB from: `{st.session_state.current_db_file}`")
 
         db_file = st.text_input(
             "Or enter path to existing SQLite DB",
@@ -306,9 +340,9 @@ GOOGLE_API_KEY=your_actual_api_key_here
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("Connect", use_container_width=True):
+            if st.button("🔌 Connect", use_container_width=True):
                 if not st.session_state.api_configured:
-                    st.error("Please configure Google API first!")
+                    st.error("❌ Please configure Google API first!")
                 elif os.path.exists(db_file):
                     try:
                         engine = create_engine(f'sqlite:///{db_file}')
@@ -322,67 +356,74 @@ GOOGLE_API_KEY=your_actual_api_key_here
                         st.session_state.all_tables = all_tables
                         st.session_state.current_db_file = db_file
                         st.session_state.last_uploaded_csv = None
-                        st.success("Connected successfully!")
+                        st.success("✅ Connected successfully!")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Connection failed: {e}")
+                        st.error(f"❌ Connection failed: {e}")
                 else:
-                    st.error(f"Database file '{db_file}' not found!")
+                    st.error(f"❌ Database file '{db_file}' not found!")
         
         with col2:
-            if st.button("Disconnect", use_container_width=True, disabled=not st.session_state.db_connected):
+            if st.button("🔌 Disconnect", use_container_width=True, disabled=not st.session_state.db_connected):
                 if st.session_state.db_engine:
                     st.session_state.db_engine.dispose()
                 st.session_state.db_connected = False
                 st.session_state.db_engine = None
                 st.session_state.current_schema = None
                 st.session_state.last_uploaded_csv = None
-                st.info("Disconnected")
+                st.info("✅ Disconnected")
                 st.rerun()
     
     if st.session_state.db_connected:
-        st.markdown('<div class="success-box">Database Connected</div>', unsafe_allow_html=True)
+        st.markdown('<div class="success-box">✅ Database Connected</div>', unsafe_allow_html=True)
         log_size = os.path.getsize(LOG_FILE) if os.path.exists(LOG_FILE) else 0
-        st.caption(f"Query log: `query_log.json` ({log_size} bytes)")
+        st.caption(f"📝 Query log: `query_log.json` ({log_size} bytes)")
     else:
-        st.markdown('<div class="error-box">Not Connected</div>', unsafe_allow_html=True)
+        st.markdown('<div class="error-box">❌ Not Connected</div>', unsafe_allow_html=True)
     
     st.divider()
     
     if st.session_state.db_connected and hasattr(st.session_state, 'all_tables'):
-        st.subheader("Database Schema")
-        with st.expander("View Tables & Columns"):
+        st.subheader("📊 Database Schema")
+        with st.expander("👁️ View Tables & Columns"):
             for table, columns in st.session_state.all_tables.items():
-                st.markdown(f"**{table}**")
+                st.markdown(f"**📋 {table}**")
                 st.caption(", ".join(columns))
                 st.divider()
 
 # MAIN CONTENT AREA
-st.markdown('<div class="main-header">Chat With Your Database</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-header">💬 Chat With Your Database</div>', unsafe_allow_html=True)
 st.markdown("Ask questions about your data in natural language - no SQL required!")
 
-tab1, tab2, tab3, tab4, tab5 = st.tabs(["Chat", "Query History", "Insights", "Help", "Data Preview"])
+# Add scroll anchor at top
+st.markdown('<div id="top-anchor"></div>', unsafe_allow_html=True)
+
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["💬 Chat", "📜 Query History", "📊 Insights", "❓ Help", "👁️ Data Preview"])
 
 # TAB 1: CHAT INTERFACE
 with tab1:
     if not st.session_state.api_configured:
-        st.warning("Please configure Google Gemini API first using the sidebar.")
+        st.warning("⚠️ Please configure Google Gemini API first using the sidebar.")
     elif not st.session_state.db_connected:
-        st.warning("Please connect to a database using the sidebar.")
+        st.warning("⚠️ Please connect to a database using the sidebar.")
     else:
         # Query Settings in Chat Tab
-        with st.expander("Query Settings", expanded=False):
+        with st.expander("⚙️ Query Settings", expanded=False):
             max_results = st.slider("Max Results to Display", 10, 1000, 100, 10)
             enable_visualizations = st.checkbox("Enable Auto-Visualizations", value=True)
             show_sql_query = st.checkbox("Show Generated SQL", value=True)
 
         def process_user_query(user_query):
+            if not user_query or not user_query.strip():
+                return
+                
             st.session_state.chat_history.append({
                 "role": "user",
-                "content": user_query,
+                "content": user_query.strip(),
                 "timestamp": datetime.now()
             })
-            with st.spinner("Processing your query..."):
+            
+            with st.spinner("🔄 Processing your query..."):
                 try:
                     start_time = datetime.now()
                     sql_query = generate_sql(st.session_state.current_schema, user_query, st.session_state.chat_history)
@@ -391,9 +432,9 @@ with tab1:
                         sanitized_user_query = validator.sanitize_user_input(user_query)
                         is_valid, sanitized_sql, errors = validate_and_sanitize(sql_query, sanitized_user_query)
                         if not is_valid:
-                            error_msg = "Invalid SQL generated. Please try rephrasing your question."
+                            error_msg = "❌ Invalid SQL generated. Please try rephrasing your question."
                             if errors:
-                                error_msg += f" Reasons: {', '.join(errors)}"
+                                error_msg += f"\n\n**Reasons:** {', '.join(errors)}"
                             st.session_state.chat_history.append({
                                 "role": "assistant",
                                 "content": error_msg,
@@ -406,9 +447,9 @@ with tab1:
                         if result_df is not None:
                             if len(result_df) > max_results:
                                 result_df = result_df.head(max_results)
-                                result_message = f"Found {len(result_df)} results (showing first {max_results}):"
+                                result_message = f"✅ Found {len(result_df)} results (showing first {max_results}):"
                             else:
-                                result_message = f"Found {len(result_df)} results:"
+                                result_message = f"✅ Found {len(result_df)} results:"
                             summary_text = generate_summary(user_query, result_df)
                             response_time = (datetime.now() - start_time).total_seconds()
                             assistant_message = {
@@ -433,7 +474,7 @@ with tab1:
                         else:
                             st.session_state.chat_history.append({
                                 "role": "assistant",
-                                "content": "Query executed but returned no results.",
+                                "content": "⚠️ Query executed but returned no results.",
                                 "sql": sanitized_sql,
                                 "timestamp": datetime.now()
                             })
@@ -441,11 +482,11 @@ with tab1:
                     else:
                         st.session_state.chat_history.append({
                             "role": "assistant",
-                            "content": "Could not generate SQL query. Please try rephrasing your question.",
+                            "content": "❌ Could not generate SQL query. Please try rephrasing your question.",
                             "timestamp": datetime.now()
                         })
                 except Exception as e:
-                    error_msg = f"Error processing query: {str(e)}"
+                    error_msg = f"❌ Error processing query: {str(e)}"
                     st.session_state.chat_history.append({
                         "role": "assistant",
                         "content": error_msg,
@@ -453,6 +494,8 @@ with tab1:
                     })
                     if 'sanitized_sql' in locals():
                         QueryExecutionValidator.log_query_execution(query=sanitized_sql, success=False, error=error_msg)
+            
+            st.session_state.scroll_to_bottom = True
             st.rerun()
 
         # --- SMART SUGGESTED PROMPTS ---
@@ -462,10 +505,9 @@ with tab1:
                     df_preview = pd.read_sql("SELECT * FROM sales LIMIT 1", conn)
                 
                 if not df_preview.empty:
-                    st.subheader("Suggested Questions")
-                    col1, col2, col3 = st.columns(3)
+                    st.subheader("💡 Suggested Questions")
                     
-                # --- INTELLIGENT SUGGESTED PROMPTS (FILE-AWARE) ---
+                    # Intelligent prompt generation
                     numeric_cols = df_preview.select_dtypes(include=['number']).columns.tolist()
                     categorical_cols = df_preview.select_dtypes(include=['object', 'category']).columns.tolist()
                     date_cols = df_preview.select_dtypes(include=['datetime64', 'datetime']).columns.tolist()
@@ -494,249 +536,417 @@ with tab1:
                     elif gender_col:
                         prompts.append(f"Compare count by {gender_col}")
 
-                    # Always add 1-2 safe fallbacks
+                    # Always add fallbacks
                     if len(prompts) < 3:
                         prompts += [
                             "What are the key statistics of the data?",
                             "Show me a summary of all numeric columns"
                         ]
-                    prompts = prompts[:5]  # Limit to 5
-
+                    prompts = prompts[:6]  # Limit to 6
                 
-                    for i, p in enumerate(prompts[:3]):
-                        with [col1, col2, col3][i]:
-                            if st.button(p, use_container_width=True, key=f"smart_{i}"):
+                    # Display prompts in 3 columns
+                    cols = st.columns(3)
+                    for i, p in enumerate(prompts):
+                        with cols[i % 3]:
+                            if st.button(f"💭 {p}", use_container_width=True, key=f"smart_{i}"):
                                 process_user_query(p)
-                    col4, col5 = st.columns(2)
-                    for i, p in enumerate(prompts[3:]):
-                        with [col4, col5][i]:
-                            if st.button(p, use_container_width=True, key=f"smart_{i+3}"):
-                                process_user_query(p)
-            except:
-                pass
+            except Exception as e:
+                st.warning(f"⚠️ Could not generate smart prompts: {e}")
 
         st.divider()
 
+        # Chat messages container
         chat_container = st.container()
         with chat_container:
+            if not st.session_state.chat_history:
+                st.info("👋 Welcome! Ask me anything about your database.")
+            
             for idx, message in enumerate(st.session_state.chat_history):
+                # Add anchor at the start of each message for scrolling
+                if idx == len(st.session_state.chat_history) - 1:
+                    st.markdown(f'<div id="latest-message"></div>', unsafe_allow_html=True)
+                
                 with st.chat_message(message["role"]):
                     st.write(message["content"])
+                    
                     if message["role"] == "assistant" and "summary" in message and message["summary"]:
-                        st.markdown(f"**Summary:** {message['summary']}")
+                        st.markdown(f"**📝 Summary:** {message['summary']}")
 
                     if message["role"] == "assistant":
                         if "sql" in message and show_sql_query:
-                            with st.expander("View Generated SQL"):
-                                col1, col2 = st.columns([4, 1])
-                                with col1:
-                                    st.code(message["sql"], language="sql")
-                                with col2:
-                                    if st.button("Copy", key=f"copy_{idx}"):
-                                        st.code(f"```sql\n{message['sql']}\n```", language="markdown")
-                                        st.success("Copied to clipboard!")
+                            with st.expander("🔍 View Generated SQL"):
+                                st.code(message["sql"], language="sql")
 
                         if "data" in message and message["data"] is not None:
                             df = message["data"]
-                            chart_options = ["Data Table"]
+                            chart_options = ["📊 Data Table"]
                             if enable_visualizations:
-                                chart_options.extend(["Bar Chart", "Line Chart", "Scatter Plot"])
+                                chart_options.extend(["📊 Bar Chart", "📈 Line Chart", "🔵 Scatter Plot"])
                             
-                            default_selection = message.get("chart_selection", "Bar Chart")
+                            default_selection = message.get("chart_selection", "📊 Bar Chart")
                             if default_selection not in chart_options:
-                                default_selection = "Data Table"
+                                default_selection = "📊 Data Table"
                             default_index = chart_options.index(default_selection)
-                            select_key = f"chart_select_{idx}"
-                            selected_chart = st.selectbox("Select visualization:", options=chart_options, index=default_index, key=select_key)
+                            
+                            selected_chart = st.selectbox(
+                                "Select visualization:", 
+                                options=chart_options, 
+                                index=default_index, 
+                                key=f"chart_select_{idx}"
+                            )
                             message["chart_selection"] = selected_chart
+                            
                             numeric_cols = df.select_dtypes(include=['int64', 'float64', 'int32', 'float32']).columns
                             all_cols = df.columns
                             
                             try:
-                                if selected_chart == "Data Table":
+                                if selected_chart == "📊 Data Table":
                                     st.dataframe(df, use_container_width=True)
                                 
-                                elif selected_chart == "Bar Chart":
+                                elif selected_chart == "📊 Bar Chart":
                                     if len(numeric_cols) > 0 and len(all_cols) > 1:
                                         x_col = all_cols[0]
                                         y_col = numeric_cols[0]
                                         chart = px.bar(df.head(20), x=x_col, y=y_col, title=f"{y_col} by {x_col}")
-                                        st.plotly_chart(chart, use_container_width=True)
-                                        col_png, col_pdf = st.columns(2)
+                                        chart.update_layout(height=500)
+                                        st.plotly_chart(chart, use_container_width=True, key=f"plotly_{idx}_bar")
+                                        
+                                        col_png, col_csv = st.columns(2)
                                         with col_png:
                                             png_buffer = io.BytesIO()
                                             chart.write_image(png_buffer, format="png")
                                             png_buffer.seek(0)
                                             st.download_button(
-                                                label="Export Chart as PNG",
+                                                label="📥 Export Chart (PNG)",
                                                 data=png_buffer,
                                                 file_name=f"chart_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
                                                 mime="image/png",
                                                 key=f"png_{idx}_bar"
                                             )
-                                        with col_pdf:
-                                            if st.button("Export to PDF", key=f"pdf_btn_{idx}_bar"):
-                                                with st.spinner("Generating PDF..."):
-                                                    pdf_buffer = export_to_pdf(df.head(50), chart, message.get("summary"), st.session_state.chat_history[-1]["content"] if st.session_state.chat_history else "Unknown")
-                                                    st.download_button(
-                                                        label="Download PDF",
-                                                        data=pdf_buffer,
-                                                        file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-                                                        mime="application/pdf",
-                                                        key=f"pdf_download_{idx}"
-                                                    )
+                                        with col_csv:
+                                            csv = df.to_csv(index=False)
+                                            st.download_button(
+                                                label="📥 Export Data (CSV)",
+                                                data=csv,
+                                                file_name=f"data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                                mime="text/csv",
+                                                key=f"csv_{idx}_bar"
+                                            )
                                     else:
-                                        st.info("Bar chart requires at least one categorical and one numeric column.")
+                                        st.info("ℹ️ Bar chart requires at least one categorical and one numeric column.")
                                         st.dataframe(df, use_container_width=True)
                                 
-                                elif selected_chart == "Line Chart":
+                                elif selected_chart == "📈 Line Chart":
                                     if len(numeric_cols) > 0 and len(all_cols) > 1:
                                         x_col = all_cols[0]
                                         y_col = numeric_cols[0]
                                         chart = px.line(df.head(20), x=x_col, y=y_col, title=f"{y_col} by {x_col}")
-                                        st.plotly_chart(chart, use_container_width=True)
-                                        col_png, col_pdf = st.columns(2)
+                                        chart.update_layout(height=500)
+                                        st.plotly_chart(chart, use_container_width=True, key=f"plotly_{idx}_line")
+                                        
+                                        col_png, col_csv = st.columns(2)
                                         with col_png:
                                             png_buffer = io.BytesIO()
                                             chart.write_image(png_buffer, format="png")
                                             png_buffer.seek(0)
-                                            st.download_button(label="Export Chart as PNG", data=png_buffer, file_name=f"chart_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png", mime="image/png", key=f"png_{idx}_line")
-                                        with col_pdf:
-                                            if st.button("Export to PDF", key=f"pdf_btn_{idx}_line"):
-                                                with st.spinner("Generating PDF..."):
-                                                    pdf_buffer = export_to_pdf(df.head(50), chart, message.get("summary"), st.session_state.chat_history[-1]["content"] if st.session_state.chat_history else "Unknown")
-                                                    st.download_button(label="Download PDF", data=pdf_buffer, file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf", mime="application/pdf", key=f"pdf_download_{idx}")
+                                            st.download_button(
+                                                label="📥 Export Chart (PNG)",
+                                                data=png_buffer,
+                                                file_name=f"chart_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                                                mime="image/png",
+                                                key=f"png_{idx}_line"
+                                            )
+                                        with col_csv:
+                                            csv = df.to_csv(index=False)
+                                            st.download_button(
+                                                label="📥 Export Data (CSV)",
+                                                data=csv,
+                                                file_name=f"data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                                mime="text/csv",
+                                                key=f"csv_{idx}_line"
+                                            )
                                     else:
-                                        st.info("Line chart requires at least one X-axis column and one numeric Y-axis column.")
+                                        st.info("ℹ️ Line chart requires at least one X-axis column and one numeric Y-axis column.")
                                         st.dataframe(df, use_container_width=True)
                                 
-                                elif selected_chart == "Scatter Plot":
+                                elif selected_chart == "🔵 Scatter Plot":
                                     if len(numeric_cols) >= 2:
                                         x_col = numeric_cols[0]
                                         y_col = numeric_cols[1]
                                         chart = px.scatter(df.head(20), x=x_col, y=y_col, title=f"{y_col} vs {x_col}")
-                                        st.plotly_chart(chart, use_container_width=True)
-                                        col_png, col_pdf = st.columns(2)
+                                        chart.update_layout(height=500)
+                                        st.plotly_chart(chart, use_container_width=True, key=f"plotly_{idx}_scatter")
+                                        
+                                        col_png, col_csv = st.columns(2)
                                         with col_png:
                                             png_buffer = io.BytesIO()
                                             chart.write_image(png_buffer, format="png")
                                             png_buffer.seek(0)
-                                            st.download_button(label="Export Chart as PNG", data=png_buffer, file_name=f"chart_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png", mime="image/png", key=f"png_{idx}_scatter")
-                                        with col_pdf:
-                                            if st.button("Export to PDF", key=f"pdf_btn_{idx}_scatter"):
-                                                with st.spinner("Generating PDF..."):
-                                                    pdf_buffer = export_to_pdf(df.head(50), chart, message.get("summary"), st.session_state.chat_history[-1]["content"] if st.session_state.chat_history else "Unknown")
-                                                    st.download_button(label="Download PDF", data=pdf_buffer, file_name=f"report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf", mime="application/pdf", key=f"pdf_download_{idx}")
+                                            st.download_button(
+                                                label="📥 Export Chart (PNG)",
+                                                data=png_buffer,
+                                                file_name=f"chart_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png",
+                                                mime="image/png",
+                                                key=f"png_{idx}_scatter"
+                                            )
+                                        with col_csv:
+                                            csv = df.to_csv(index=False)
+                                            st.download_button(
+                                                label="📥 Export Data (CSV)",
+                                                data=csv,
+                                                file_name=f"data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                                                mime="text/csv",
+                                                key=f"csv_{idx}_scatter"
+                                            )
                                     else:
-                                        st.info("Scatter plot requires at least two numeric columns.")
+                                        st.info("ℹ️ Scatter plot requires at least two numeric columns.")
                                         st.dataframe(df, use_container_width=True)
                             except Exception as e:
-                                st.error(f"Could not generate chart: {e}")
+                                st.error(f"❌ Could not generate chart: {e}")
                                 st.dataframe(df, use_container_width=True)
 
-                            unique_key = f"download_{idx}"
-                            csv = df.to_csv(index=False)
-                            st.download_button(
-                                label="Download Results",
-                                data=csv,
-                                file_name=f"query_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                                mime="text/csv",
-                                key=unique_key
-                            )
-        
-        # Auto-scroll to bottom
-        st.markdown("<div id='bottom'></div>", unsafe_allow_html=True)
-        st.markdown("<script>window.parent.document.querySelector('.section-container').scrollTop = document.getElementById('bottom').offsetTop;</script>", unsafe_allow_html=True)
+                                st.dataframe(df, use_container_width=True, height=400)
 
-        # Chat input
-        user_query = st.chat_input("Ask a question about your database...", key="chat_input")
-        if user_query:
-            process_user_query(user_query)
+        # Add markers for scrolling
+        st.markdown('<div id="top-marker"></div>', unsafe_allow_html=True)
+        st.markdown('<div id="bottom-marker"></div>', unsafe_allow_html=True)
+
+# === MOVED OUTSIDE TABS - THIS IS THE KEY! ===
+# This section must be at the ROOT LEVEL, not inside any tabs
+
+# Only show chat controls when connected
+if st.session_state.db_connected and st.session_state.api_configured:
+    
+    st.divider()
+    
+    # Control buttons row
+    col1, col2 = st.columns([9, 1])
+    
+    with col1:
+        st.markdown("")  # spacer
+    
+    with col2:
+        if st.button("🗑️", key="clear_chat_btn", help="Clear chat", use_container_width=True):
+            st.session_state.chat_history = []
+            st.success("Chat cleared!")
+            st.rerun()
+    
+    # Chat input - this stays at the bottom naturally
+    user_query = st.chat_input(
+        "💬 Ask a question about your database...",
+        key="main_chat_input"
+    )
+
+    if user_query and user_query.strip():
+        # Process query
+        st.session_state.chat_history.append({
+            "role": "user",
+            "content": user_query.strip(),
+            "timestamp": datetime.now()
+        })
+        
+        with st.spinner("🔄 Processing your query..."):
+            try:
+                start_time = datetime.now()
+                sql_query = generate_sql(st.session_state.current_schema, user_query, st.session_state.chat_history)
+                
+                if sql_query:
+                    validator = SQLSecurityValidator()
+                    sanitized_user_query = validator.sanitize_user_input(user_query)
+                    is_valid, sanitized_sql, errors = validate_and_sanitize(sql_query, sanitized_user_query)
+                    
+                    if not is_valid:
+                        error_msg = "❌ Invalid SQL generated. Please try rephrasing your question."
+                        if errors:
+                            error_msg += f"\n\n**Reasons:** {', '.join(errors)}"
+                        st.session_state.chat_history.append({
+                            "role": "assistant",
+                            "content": error_msg,
+                            "timestamp": datetime.now()
+                        })
+                        QueryExecutionValidator.log_query_execution(query=sql_query, success=False, error="Validation failed: " + "; ".join(errors))
+                    else:
+                        result_df = execute_query(st.session_state.db_engine, sanitized_sql)
+                        
+                        if result_df is not None:
+                            max_results = 100
+                            if len(result_df) > max_results:
+                                result_df = result_df.head(max_results)
+                                result_message = f"✅ Found {len(result_df)} results (showing first {max_results}):"
+                            else:
+                                result_message = f"✅ Found {len(result_df)} results:"
+                            
+                            summary_text = generate_summary(user_query, result_df)
+                            response_time = (datetime.now() - start_time).total_seconds()
+                            
+                            assistant_message = {
+                                "role": "assistant",
+                                "content": result_message,
+                                "sql": sanitized_sql,
+                                "data": result_df,
+                                "summary": summary_text,
+                                "timestamp": datetime.now(),
+                                "response_time": response_time,
+                                "chart_selection": "📊 Bar Chart"
+                            }
+                            st.session_state.chat_history.append(assistant_message)
+                            
+                            st.session_state.query_history.append({
+                                "query": user_query,
+                                "sql": sanitized_sql,
+                                "timestamp": datetime.now(),
+                                "rows_returned": len(result_df),
+                                "response_time": response_time
+                            })
+                            QueryExecutionValidator.log_query_execution(query=sanitized_sql, success=True, error=None)
+                        else:
+                            st.session_state.chat_history.append({
+                                "role": "assistant",
+                                "content": "⚠️ Query executed but returned no results.",
+                                "sql": sanitized_sql,
+                                "timestamp": datetime.now()
+                            })
+                            QueryExecutionValidator.log_query_execution(query=sanitized_sql, success=True, error="No results")
+                else:
+                    st.session_state.chat_history.append({
+                        "role": "assistant",
+                        "content": "❌ Could not generate SQL query. Please try rephrasing your question.",
+                        "timestamp": datetime.now()
+                    })
+            except Exception as e:
+                error_msg = f"❌ Error processing query: {str(e)}"
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": error_msg,
+                    "timestamp": datetime.now()
+                })
+                if 'sanitized_sql' in locals():
+                    QueryExecutionValidator.log_query_execution(query=sanitized_sql, success=False, error=error_msg)
+        
+        # Set flag to auto-scroll after query
+        st.session_state.auto_scroll_after_query = True
+        st.rerun()
+
+else:
+    st.info("👈 Please configure API and connect to database to start chatting")
+
+# === AUTO-SCROLL AFTER QUERY ===
+# This executes after a query is processed to show the output
+
+if st.session_state.get('auto_scroll_after_query', False):
+    st.components.v1.html(
+        """
+        <script>
+            // Wait for content to render, then scroll to bottom
+            setTimeout(function() {
+                const main = window.parent.document.querySelector('section.main');
+                if (main) {
+                    main.scrollTo({
+                        top: main.scrollHeight,
+                        behavior: 'smooth'
+                    });
+                }
+            }, 300);
+        </script>
+        """,
+        height=0,
+    )
+    st.session_state.auto_scroll_after_query = False
+
+# === END OF MOVED SECTION ===
 
 # TAB 5: DATA PREVIEW
 with tab5:
     if not st.session_state.db_connected:
-        st.warning("Please upload a CSV or connect to a database first.")
+        st.warning("⚠️ Please upload a CSV or connect to a database first.")
     else:
-        with st.spinner("Loading data preview..."):
+        with st.spinner("🔄 Loading data preview..."):
             try:
                 with st.session_state.db_engine.connect() as conn:
                     df_preview = pd.read_sql("SELECT * FROM sales LIMIT 10", conn)
                     total_rows = pd.read_sql("SELECT COUNT(*) FROM sales", conn).iloc[0, 0]
                 
-                st.success(f"Database Loaded: `{st.session_state.current_db_file or 'temp_uploaded.db'}`")
+                st.success(f"✅ Database Loaded: `{st.session_state.current_db_file or 'temp_uploaded.db'}`")
+                
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.metric("Total Rows", f"{total_rows:,}")
+                    st.metric("📊 Total Rows", f"{total_rows:,}")
                 with col2:
-                    st.metric("Columns", len(df_preview.columns))
+                    st.metric("📋 Columns", len(df_preview.columns))
                 with col3:
-                    st.metric("Sample Size", len(df_preview))
+                    st.metric("👁️ Sample Size", len(df_preview))
 
                 st.divider()
-                st.subheader("First 10 Rows")
-                st.dataframe(df_preview, use_container_width=True)
+                st.subheader("📄 First 10 Rows")
+                st.dataframe(df_preview, use_container_width=True, height=400)
 
                 st.divider()
-                st.subheader("Columns & Types")
+                st.subheader("🔍 Columns & Types")
                 col_info = []
                 for col in df_preview.columns:
                     dtype = df_preview[col].dtype
                     sample = df_preview[col].dropna().iloc[0] if not df_preview[col].dropna().empty else "—"
-                    col_info.append({"Column": col, "Type": str(dtype), "Sample": sample})
-                st.dataframe(col_info, use_container_width=True)
+                    col_info.append({"Column": col, "Type": str(dtype), "Sample": str(sample)[:50]})
+                st.dataframe(pd.DataFrame(col_info), use_container_width=True, hide_index=True)
 
             except Exception as e:
-                st.error(f"Could not load preview: {e}")
+                st.error(f"❌ Could not load preview: {e}")
 
 # TAB 2: QUERY HISTORY
 with tab2:
-    st.subheader("Query History")
+    st.subheader("📜 Query History")
     
     if not st.session_state.query_history:
-        st.info("No queries yet. Start chatting to see your query history!")
+        st.info("ℹ️ No queries yet. Start chatting to see your query history!")
     else:
         col1, col2 = st.columns([3, 1])
         with col1:
-            search_term = st.text_input("Search queries", placeholder="Search your query history...")
+            search_term = st.text_input("🔍 Search queries", placeholder="Search your query history...")
         with col2:
-            if st.button("Clear History", use_container_width=True):
+            if st.button("🗑️ Clear History", use_container_width=True):
                 st.session_state.query_history = []
                 st.session_state.chat_history = []
+                st.success("✅ History cleared!")
                 st.rerun()
         
         st.divider()
         
-        for idx, query_item in enumerate(reversed(st.session_state.query_history)):
-            if not search_term or search_term.lower() in query_item["query"].lower():
-                with st.expander(
-                    f"{query_item['timestamp'].strftime('%Y-%m-%d %H:%M:%S')} - {query_item['query'][:50]}...",
-                    expanded=False
-                ):
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.markdown(f"**Natural Language Query:**")
-                        st.info(query_item["query"])
-                        st.markdown(f"**Generated SQL:**")
-                        st.code(query_item["sql"], language="sql")
-                    with col2:
-                        st.metric("Rows Returned", query_item["rows_returned"])
-                        if "response_time" in query_item:
-                            st.metric("Response Time", f"{query_item['response_time']:.2f}s")
-                        if st.button("Rerun", key=f"rerun_{idx}"):
-                            st.session_state.chat_history.append({
-                                "role": "user",
-                                "content": query_item["query"],
-                                "timestamp": datetime.now()
-                            })
-                            st.rerun()
+        filtered_history = [q for q in reversed(st.session_state.query_history) 
+                           if not search_term or search_term.lower() in q["query"].lower()]
+        
+        if not filtered_history:
+            st.info("ℹ️ No matching queries found.")
+        
+        for idx, query_item in enumerate(filtered_history):
+            with st.expander(
+                f"🕐 {query_item['timestamp'].strftime('%Y-%m-%d %H:%M:%S')} - {query_item['query'][:60]}...",
+                expanded=False
+            ):
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown("**💬 Natural Language Query:**")
+                    st.info(query_item["query"])
+                    st.markdown("**🔧 Generated SQL:**")
+                    st.code(query_item["sql"], language="sql")
+                with col2:
+                    st.metric("📊 Rows Returned", query_item["rows_returned"])
+                    if "response_time" in query_item:
+                        st.metric("⚡ Response Time", f"{query_item['response_time']:.2f}s")
+                    if st.button("🔄 Rerun", key=f"rerun_{idx}", use_container_width=True):
+                        st.session_state.chat_history.append({
+                            "role": "user",
+                            "content": query_item["query"],
+                            "timestamp": datetime.now()
+                        })
+                        st.session_state.scroll_to_bottom = True
+                        st.rerun()
 
 # TAB 3: INSIGHTS DASHBOARD
 with tab3:
-    st.subheader("Database Insights")
+    st.subheader("📊 Database Insights")
     
     if not st.session_state.db_connected:
-        st.warning("Connect to a database to view insights.")
+        st.warning("⚠️ Connect to a database to view insights.")
     else:
         try:
             with st.session_state.db_engine.connect() as conn:
@@ -750,69 +960,155 @@ with tab3:
             
             col1, col2, col3, col4 = st.columns(4)
             with col1:
-                st.metric("Total Tables", total_tables)
+                st.metric("📋 Total Tables", total_tables)
             with col2:
-                st.metric("Total Records", f"{total_records:,}")
+                st.metric("📊 Total Records", f"{total_records:,}")
             with col3:
-                st.metric("Queries Today", len(st.session_state.query_history))
+                st.metric("💬 Queries Today", len(st.session_state.query_history))
             with col4:
                 if st.session_state.query_history:
                     avg_time = sum(q.get('response_time', 0) for q in st.session_state.query_history) / len(st.session_state.query_history)
-                    st.metric("Avg Response Time", f"{avg_time:.2f}s")
+                    st.metric("⚡ Avg Response", f"{avg_time:.2f}s")
                 else:
-                    st.metric("Avg Response Time", "N/A")
+                    st.metric("⚡ Avg Response", "N/A")
             
             st.divider()
             
             if st.session_state.query_history:
-                st.markdown("#### Query Activity")
+                st.markdown("#### 📈 Query Activity")
                 history_df = pd.DataFrame(st.session_state.query_history)
                 history_df['date'] = pd.to_datetime(history_df['timestamp']).dt.date
                 daily_counts = history_df.groupby('date').size().reset_index(name='count')
-                fig = px.line(daily_counts, x='date', y='count', title="Queries Over Time")
+                fig = px.line(daily_counts, x='date', y='count', title="Queries Over Time", markers=True)
+                fig.update_layout(height=400)
                 st.plotly_chart(fig, use_container_width=True)
                 
-                st.markdown("#### Common Query Terms")
+                st.markdown("#### 🔤 Common Query Terms")
                 all_words = ' '.join(history_df['query'].str.lower()).split()
-                word_freq = pd.Series(all_words).value_counts().head(10)
-                fig2 = px.bar(x=word_freq.index, y=word_freq.values, title="Top 10 Query Terms")
+                # Filter out common words
+                stop_words = {'the', 'a', 'an', 'by', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'from', 'show', 'me', 'what', 'is', 'are'}
+                filtered_words = [w for w in all_words if w not in stop_words and len(w) > 2]
+                word_freq = pd.Series(filtered_words).value_counts().head(10)
+                fig2 = px.bar(x=word_freq.index, y=word_freq.values, title="Top 10 Query Terms", labels={'x': 'Term', 'y': 'Frequency'})
+                fig2.update_layout(height=400)
                 st.plotly_chart(fig2, use_container_width=True)
         
         except Exception as e:
-            st.error(f"Error loading insights: {e}")
+            st.error(f"❌ Error loading insights: {e}")
 
 # TAB 4: HELP & DOCUMENTATION
 with tab4:
-    st.subheader("Help & Documentation")
+    st.subheader("❓ Help & Documentation")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("""
+        ### 🚀 Getting Started
+        
+        #### 1. Configure API Key
+        - Get your Google Gemini API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
+        - Create a `.env` file in your project folder
+        - Add: `GOOGLE_API_KEY=your_key_here`
+        
+        #### 2. Connect to Database
+        - **Option A:** Upload a CSV file
+        - **Option B:** Connect to existing `.db` file
+        - Click **🔌 Connect**
+        
+        #### 3. Ask Questions
+        - Type your question in natural language
+        - Click suggested prompts for quick queries
+        - View results, charts, and summaries
+        
+        #### 4. Export Results
+        - Download data as CSV
+        - Export charts as PNG
+        - Save queries for later
+        """)
+    
+    with col2:
+        st.markdown("""
+        ### 💡 Example Questions
+        
+        **Sales Analysis:**
+        - "Show total sales by product line"
+        - "Top 5 cities by revenue"
+        - "Average rating by category"
+        
+        **Trends:**
+        - "Monthly sales trend"
+        - "Show sales growth over time"
+        
+        **Comparisons:**
+        - "Compare male vs female customers"
+        - "Which branch has highest sales?"
+        
+        **Statistics:**
+        - "What are the key statistics?"
+        - "Show distribution of ratings"
+        """)
+    
+    st.divider()
+    
+    col3, col4 = st.columns(2)
+    
+    with col3:
+        st.markdown("""
+        ### 🔒 Security Features
+        
+        - ✅ SQL injection protection
+        - ✅ Read-only queries
+        - ✅ Query validation
+        - ✅ No file system access
+        - ✅ Sanitized inputs
+        """)
+    
+    with col4:
+        st.markdown("""
+        ### 🛠️ Tech Stack
+        
+        - **AI:** Google Gemini 2.0 Flash
+        - **Database:** SQLite + SQLAlchemy
+        - **Frontend:** Streamlit
+        - **Charts:** Plotly
+        - **PDF Export:** ReportLab
+        """)
+    
+    st.divider()
+    
     st.markdown("""
-    ### Getting Started
+    ### 🎯 Tips & Tricks
     
-    1. **Configure API Key**: 
-       - Get your Google Gemini API key from [Google AI Studio](https://makersuite.google.com/app/apikey)
-       - Add to `.env` file as `GOOGLE_API_KEY=your_key_here`
+    - 📌 Use **scroll buttons** (right side) to navigate long conversations
+    - 🔍 Use **Query History** tab to rerun previous queries
+    - 📊 Toggle visualizations on/off in **Query Settings**
+    - 💾 Export your data before disconnecting
+    - 🔄 Use **Insights** tab to see your usage patterns
     
-    2. **Connect to Database**: 
-       - Upload CSV or enter path to `.db` file
-       - Click **Connect**
+    ### 🐛 Troubleshooting
     
-    3. **Ask Questions**: Type in natural language
+    **"API Key Not Found"**
+    - Make sure `.env` file exists in project root
+    - Check that `GOOGLE_API_KEY` is spelled correctly
     
-    4. **View Results**: See data + auto charts
+    **"Database file not found"**
+    - Verify the file path is correct
+    - Make sure the file has `.db` extension
     
-    ### Example Questions
-    - "Show total sales by product line"
-    - "Top 5 cities by revenue"
-    - "Monthly sales trend"
-    - "Compare male vs female customers"
+    **"Could not generate chart"**
+    - Ensure your data has numeric columns
+    - Try selecting different chart types
     
-    ### Security
-    - SQL injection blocked
-    - Read-only queries
-    - No file system access
-    
-    ### Tech Stack
-    - **AI**: Google Gemini 2.0 Flash
-    - **DB**: SQLite + SQLAlchemy
-    - **Frontend**: Streamlit
-    - **Charts**: Plotly
+    **Charts not exporting**
+    - Install kaleido: `pip install kaleido`
     """)
+
+# Footer
+st.markdown("---")
+st.markdown(
+    "<div style='text-align: center; color: #666; padding: 20px;'>"
+    "<b>Chat With Your Database</b> "
+    "</div>",
+    unsafe_allow_html=True
+)
