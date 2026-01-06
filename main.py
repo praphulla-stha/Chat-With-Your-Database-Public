@@ -148,7 +148,7 @@ def get_all_tables(engine):
 
 def generate_sql(schema, question, chat_history):
     try:
-        model = genai.GenerativeModel('models/gemini-2.0-flash')
+        model = genai.GenerativeModel('models/gemini-2.5-flash')
         history_prompt = ""
         for message in chat_history[-5:-1]: 
             if message["role"] == "user":
@@ -197,7 +197,7 @@ def generate_summary(user_query, result_df):
     if result_df.empty:
         return None 
     try:
-        model = genai.GenerativeModel('models/gemini-2.0-flash')
+        model = genai.GenerativeModel('models/gemini-2.5-flash')
         df_string = result_df.head(10).to_csv(index=False)
         prompt = f"""
 Answer in ONE sentence.
