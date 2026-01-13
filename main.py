@@ -24,12 +24,7 @@ from src.db.sql_security import (
     QueryExecutionValidator
 )
 
-import plotly.io as pio
 
-pio.kaleido.scope.chromium_args = [
-    "--no-sandbox",
-    "--disable-dev-shm-usage",
-]
 
 # Page configuration
 st.set_page_config(
